@@ -1,0 +1,7 @@
+echo "# assignment-1-madenietovabaj40-svg" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/cu-ecen-aeld/assignment-1-madenietovabaj40-svg.git
+git push -u origin main
