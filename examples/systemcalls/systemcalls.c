@@ -1,5 +1,9 @@
 #include "systemcalls.h"
-
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -9,15 +13,19 @@
 */
 bool do_system(const char *cmd)
 {
+    if (cmd == NULL) {
+        return false;
+    }
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
+    int status = system(cmd);
+    if (status == -1) {
+        return false;
+    }
 
-    return true;
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -49,19 +57,31 @@ bool do_exec(int count, ...)
     // and may be removed
     command[count] = command[count];
 
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
+    pid_t pid = fork();
 
+    if (pid == -1) {
+        va_end(args);
+        return false;
+    }
+    else if (pid == 0) {
+        execv(command[0], command);
+        exit(EXIT_FAILURE);
+    }
+    else {
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            va_end(args);
+            return false;
+        }
+
+        va_end(args);
+
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            return true;
+        }
+        return false;
+    }
     va_end(args);
-
-    return true;
 }
 
 /**
@@ -83,17 +103,40 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
+    pid_t pid = fork();
 
-
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
-
+    if (pid == -1) {
     va_end(args);
+    return false;
+    }
+    else if (pid == 0) {
+        int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            exit(EXIT_FAILURE);
+        }
 
-    return true;
+        if(dup2(fd, 1) < 0) {
+           close(fd);
+           exit(EXIT_FAILURE);
+        }
+        close(fd);
+
+        execv(command[0], command);
+        exit(EXIT_FAILURE);
+    }
+    else {
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            va_end(args);
+            return false;
+        }
+
+        va_end(args);
+
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+           return true;
+        }
+        return false;
+    }
+    va_end(args);
 }
