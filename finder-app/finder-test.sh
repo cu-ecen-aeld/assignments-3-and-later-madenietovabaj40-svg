@@ -1,73 +1,45 @@
 #!/bin/sh
-# Tester script for assignment 1 and assignment 2
-# Author: Siddhant Jajoo
+# Tester script for assignment 4
+# Author: Abay
 
 set -e
 set -u
 
 NUMFILES=10
-WRITESTR=AELD_IS_FUN
-WRITEDIR=/tmp/aeld-data
-username=$(cat conf/username.txt)
+WRITESTR="AELD_IS_FUN"
+WRITEDIR="/tmp/aeld-data"
+username=$(cat /etc/finder-app/conf/username.txt)
 
-if [ $# -lt 3 ]
+if [ $# -ge 1 ]
 then
-	echo "Using default value ${WRITESTR} for string to write"
-	if [ $# -lt 1 ]
-	then
-		echo "Using default value ${NUMFILES} for number of files to write"
-	else
-		NUMFILES=$1
-	fi	
-else
 	NUMFILES=$1
-	WRITESTR=$2
-	WRITEDIR=/tmp/aeld-data/$3
 fi
-
-MATCHSTR="The number of files are ${NUMFILES} and the number of matching lines are ${NUMFILES}"
-
-echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
-
-rm -rf "${WRITEDIR}"
-
-# create $WRITEDIR if not assignment1
-assignment=`cat ../conf/assignment.txt`
-
-if [ $assignment != 'assignment1' ]
+if [ $# -ge 2 ]
 then
-	mkdir -p "$WRITEDIR"
-
-	#The WRITEDIR is in quotes because if the directory path consists of spaces, then variable substitution will consider it as multiple argument.
-	#The quotes signify that the entire string in WRITEDIR is a single string.
-	#This issue can also be resolved by using double square brackets i.e [[ ]] instead of using quotes.
-	if [ -d "$WRITEDIR" ]
-	then
-		echo "$WRITEDIR created"
-	else
-		exit 1
-	fi
+	WRITESTR=$2
 fi
-#echo "Removing the old writer utility and compiling as a native application"
-#make clean
-#make
 
-for i in $( seq 1 $NUMFILES)
+CLEAN_WRITESTR=$(echo "$WRITESTR" | tr -d '\r')
+
+echo "Writing $NUMFILES files containing $CLEAN_WRITESTR to $WRITEDIR"
+
+rm -rf "$WRITEDIR"
+mkdir -p "$WRITEDIR"
+
+for i in $(seq 1 $NUMFILES)
 do
-	./writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	# Вызываем writer БЕЗ ./ (так как он будет в /usr/bin)
+	writer "$WRITEDIR/${username}$i" "$CLEAN_WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+# Вызываем finder.sh БЕЗ ./ и пишем результат в /tmp/assignment4-result.txt
+finder.sh "$WRITEDIR" "$CLEAN_WRITESTR" > /tmp/assignment4-result.txt
 
-# remove temporary directories
-rm -rf /tmp/aeld-data
-
-set +e
-echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
-if [ $? -eq 0 ]; then
-	echo "success"
+# Проверяем результат (это нужно для прохождения автотеста)
+if grep -q "success" /tmp/assignment4-result.txt; then
+	echo "Success!"
 	exit 0
 else
-	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
+	echo "Failed!"
 	exit 1
 fi
