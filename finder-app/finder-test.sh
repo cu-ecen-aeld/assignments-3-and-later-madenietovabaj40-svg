@@ -35,11 +35,12 @@ done
 # Вызываем finder.sh БЕЗ ./ и пишем результат в /tmp/assignment4-result.txt
 finder.sh "$WRITEDIR" "$CLEAN_WRITESTR" > /tmp/assignment4-result.txt
 
-# Проверяем результат (это нужно для прохождения автотеста)
-if grep -q "success" /tmp/assignment4-result.txt; then
-	echo "Success!"
-	exit 0
+EXPECTED_STR="The number of files are ${NUMFILES} and the number of matching lines are ${NUMFILES}"
+
+if grep -q "$EXPECTED_STR" /tmp/assignment4-result.txt; then
+    echo "success"
+    exit 0
 else
-	echo "Failed!"
-	exit 1
+    echo "Failed!"
+    exit 1
 fi
