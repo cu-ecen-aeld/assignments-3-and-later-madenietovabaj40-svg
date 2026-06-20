@@ -23,8 +23,12 @@ static void signal_handler(int sig)
 {
     (void)sig;
     keep_running = 0;
-}
 
+    // Принудительно будим блокирующий accept()
+    if (server_fd != -1) {
+        shutdown(server_fd, SHUT_RDWR);
+    }
+}
 static void daemonize(void)
 {
     pid_t pid = fork();
@@ -91,17 +95,26 @@ int main(int argc, char *argv[])
     }
 
     struct sockaddr_in client_addr;
-    socklen_t client_len = sizeof(client_addr);
+    socklen_t client_len;
 
     while (keep_running) {
-
-        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-        if (client_fd < 0) {
-            if (errno == EINTR)
-                break;
-            continue;
+    // ВАЖНО: сбрасываем размер перед КАЖДЫМ вызовом accept
+    client_len = sizeof(client_addr); 
+    
+    client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+    
+    if (client_fd == -1) {
+        // Если сокет закрыли через shutdown во время сигнала, accept вернет -1.
+        // Если мы закрываемся, то просто выходим из цикла без паники
+        if (!keep_running) {
+            break; 
         }
-
+        perror("accept failed");
+        continue;
+    }
+    
+    // Дальше твой код обработки чтения/записи...
+}
         // Логирование IP при подключении (Строгое требование AESD)
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
