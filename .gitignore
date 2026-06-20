@@ -7,3 +7,5 @@ aesd-build
 .vscode/
 test.sh.log
 actions-runner-4/
+server/aesdsocket
+finder-app/writer
