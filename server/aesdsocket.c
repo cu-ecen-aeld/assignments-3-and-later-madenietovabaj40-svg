@@ -1,103 +1,72 @@
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <syslog.h>
-#include <signal.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include <fcntl.h>
-#include <errno.h>
-#include <sys/stat.h>
+#include <stdbool.h>
 
 #define PORT 9000
 #define DATA_FILE "/var/tmp/aesdsocketdata"
 #define BUFFER_SIZE 1024
 
-<<<<<<< HEAD
-static int server_fd = -1;
-static int client_fd = -1;
-static volatile sig_atomic_t keep_running = 1;
-
-static void signal_handler(int sig)
-{
-    (void)sig;
-    keep_running = 0;
-
-    // Принудительно будим блокирующий accept()
-    if (server_fd != -1) {
-        shutdown(server_fd, SHUT_RDWR);
-    }
-}
-static void daemonize(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) exit(-1);
-    if (pid > 0) exit(0);
-
-    setsid();
-
-    pid = fork();
-    if (pid < 0) exit(-1);
-    if (pid > 0) exit(0);
-
-    chdir("/");
-    umask(0);
-
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-
-=======
 int server_fd = -1;
 int client_fd = -1;
-volatile sig_atomic_t keep_running = 1;
+
+void cleanup() {
+    if (client_fd != -1) {
+        close(client_fd);
+    }
+    if (server_fd != -1) {
+        close(server_fd);
+    }
+    remove(DATA_FILE);
+    closelog();
+}
 
 static void signal_handler(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
-        keep_running = 0;
-        if (client_fd != -1) close(client_fd);
-        if (server_fd != -1) close(server_fd);
+        syslog(LOG_INFO, "Caught signal, exiting");
+        cleanup();
+        exit(EXIT_SUCCESS);
     }
 }
 
-void daemonize(void) {
+void daemonize() {
     pid_t pid = fork();
-    if (pid < 0) exit(-1);
-    if (pid > 0) exit(0);
-    if (setsid() < 0) exit(-1);
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
+
+    if (setsid() < 0) exit(EXIT_FAILURE);
+
     pid = fork();
-    if (pid < 0) exit(-1);
-    if (pid > 0) exit(0);
-    chdir("/");
-    umask(0);
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
+
+    if (chdir("/") < 0) exit(EXIT_FAILURE);
+
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
->>>>>>> 92233a4a19ec974796a5687d8c9ed2d5bb4e976a
-    open("/dev/null", O_RDWR);
-    open("/dev/null", O_RDWR);
-    open("/dev/null", O_RDWR);
+
+    open("/dev/null", O_RDONLY);
+    open("/dev/null", O_WRONLY);
+    open("/dev/null", O_WRONLY);
 }
 
-<<<<<<< HEAD
-int main(int argc, char *argv[])
-{
-    openlog("aesdsocket", LOG_PID, LOG_USER);
-
-    if (argc == 2 && strcmp(argv[1], "-d") == 0) {
-        daemonize();
-    }
-
-=======
 int main(int argc, char *argv[]) {
-    openlog("aesdsocket", LOG_PID, LOG_USER);
-    if (argc == 2 && strcmp(argv[1], "-d") == 0) {
-        daemonize();
+    bool daemon_mode = false;
+    if (argc > 1 && strcmp(argv[1], "-d") == 0) {
+        daemon_mode = true;
     }
->>>>>>> 92233a4a19ec974796a5687d8c9ed2d5bb4e976a
+
+    openlog("aesdsocket", LOG_PID, LOG_USER);
+
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_handler;
@@ -105,182 +74,93 @@ int main(int argc, char *argv[]) {
     sigaction(SIGTERM, &sa, NULL);
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-<<<<<<< HEAD
     if (server_fd < 0) {
-        syslog(LOG_ERR, "socket failed: %m");
+        syslog(LOG_ERR, "Socket creation failed");
         return -1;
     }
 
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-=======
-    if (server_fd < 0) { syslog(LOG_ERR, "socket failed: %m"); return -1; }
-    int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
->>>>>>> 92233a4a19ec974796a5687d8c9ed2d5bb4e976a
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(PORT);
-<<<<<<< HEAD
-
-=======
->>>>>>> 92233a4a19ec974796a5687d8c9ed2d5bb4e976a
-    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        syslog(LOG_ERR, "bind failed: %m");
-        close(server_fd);
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        syslog(LOG_ERR, "Setsockopt failed");
+        cleanup();
         return -1;
     }
-<<<<<<< HEAD
 
-=======
->>>>>>> 92233a4a19ec974796a5687d8c9ed2d5bb4e976a
+    struct sockaddr_in address;
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        syslog(LOG_ERR, "Bind failed");
+        cleanup();
+        return -1;
+    }
+
+    if (daemon_mode) {
+        daemonize();
+    }
+
     if (listen(server_fd, 10) < 0) {
-        syslog(LOG_ERR, "listen failed: %m");
-        close(server_fd);
+        syslog(LOG_ERR, "Listen failed");
+        cleanup();
         return -1;
     }
-    struct sockaddr_in client_addr;
-<<<<<<< HEAD
-    socklen_t client_len;
 
-    while (keep_running) {
-    // ВАЖНО: сбрасываем размер перед КАЖДЫМ вызовом accept
-    client_len = sizeof(client_addr); 
-    
-    client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-    
-    if (client_fd == -1) {
-        // Если сокет закрыли через shutdown во время сигнала, accept вернет -1.
-        // Если мы закрываемся, то просто выходим из цикла без паники
-        if (!keep_running) {
-            break; 
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    while (1) {
+        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
+        if (client_fd < 0) {
+            syslog(LOG_ERR, "Accept failed");
+            continue;
         }
-        perror("accept failed");
-        continue;
-    }
-    
-    // Дальше твой код обработки чтения/записи...
-}
-        // Логирование IP при подключении (Строгое требование AESD)
+
         char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
         syslog(LOG_INFO, "Accepted connection from %s", client_ip);
 
-        char *recv_buf = malloc(BUFFER_SIZE);
-        if (!recv_buf)
-            break;
+        FILE *data_file = fopen(DATA_FILE, "a+");
+        if (!data_file) {
+            syslog(LOG_ERR, "Failed to open data file");
+            close(client_fd);
+            continue;
+        }
 
-        size_t buf_size = BUFFER_SIZE;
-        size_t data_len = 0;
+        char read_buf[BUFFER_SIZE];
+        ssize_t bytes_received;
+        bool newline_found = false;
 
-        while (keep_running) {
-
-            char chunk[BUFFER_SIZE];
-            ssize_t bytes = recv(client_fd, chunk, sizeof(chunk), 0);
-
-            if (bytes <= 0)
-                break;
-
-            if (data_len + bytes >= buf_size) {
-                buf_size += bytes + BUFFER_SIZE;
-                char *tmp = realloc(recv_buf, buf_size);
-                if (!tmp)
+        while ((bytes_received = recv(client_fd, read_buf, BUFFER_SIZE, 0)) > 0) {
+            fwrite(read_buf, 1, bytes_received, data_file);
+            
+            for (ssize_t i = 0; i < bytes_received; i++) {
+                if (read_buf[i] == '\n') {
+                    newline_found = true;
                     break;
-                recv_buf = tmp;
+                }
             }
-
-            memcpy(recv_buf + data_len, chunk, bytes);
-            data_len += bytes;
-
-            char *newline;
-
-            while ((newline = memchr(recv_buf, '\n', data_len)) != NULL) {
-
-                size_t len = (newline - recv_buf) + 1;
-
-                // Запись с проверкой на успешное открытие
-                FILE *f = fopen(DATA_FILE, "a");
-                if (f) {
-                    fwrite(recv_buf, 1, len, f);
-                    fclose(f);
-                }
-
-                // Чтение с проверкой на успешное открытие
-                FILE *rf = fopen(DATA_FILE, "r");
-                if (rf) {
-                    char send_buf[BUFFER_SIZE];
-                    size_t n;
-                    while ((n = fread(send_buf, 1, sizeof(send_buf), rf)) > 0) {
-                        send(client_fd, send_buf, n, 0);
-                    }
-                    fclose(rf);
-                }
-
-                memmove(recv_buf, recv_buf + len, data_len - len);
-                data_len -= len;
+            if (newline_found) {
+                break;
             }
         }
 
-        free(recv_buf);
+        fflush(data_file);
+        fseek(data_file, 0, SEEK_SET);
+
+        size_t bytes_read;
+        while ((bytes_read = fread(read_buf, 1, BUFFER_SIZE, data_file)) > 0) {
+            send(client_fd, read_buf, bytes_read, 0);
+        }
+
+        fclose(data_file);
         close(client_fd);
         client_fd = -1;
-
-        // Логирование закрытия (Строгое требование AESD)
         syslog(LOG_INFO, "Closed connection from %s", client_ip);
     }
 
-    if (server_fd != -1)
-        close(server_fd);
-
-    unlink(DATA_FILE);
-    syslog(LOG_INFO, "Server shutdown complete");
-=======
-    socklen_t client_len = sizeof(client_addr);
-
-    while (keep_running) {
-        client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-        if (client_fd < 0) { if (errno == EINTR) break; continue; }
-        char *recv_buf = malloc(BUFFER_SIZE);
-        size_t buf_size = BUFFER_SIZE;
-        size_t data_len = 0;
-        while (keep_running) {
-            char chunk[BUFFER_SIZE];
-            ssize_t bytes = recv(client_fd, chunk, sizeof(chunk), 0);
-            if (bytes <= 0) break;
-            if (data_len + bytes >= buf_size) {
-                buf_size += bytes + BUFFER_SIZE;
-                char *tmp = realloc(recv_buf, buf_size);
-                if (!tmp) { free(recv_buf); recv_buf = NULL; break; }
-                recv_buf = tmp;
-            }
-            memcpy(recv_buf + data_len, chunk, bytes);
-            data_len += bytes;
-            char *newline;
-            while ((newline = memchr(recv_buf, '\n', data_len)) != NULL) {
-                size_t line_len = newline - recv_buf + 1;
-                FILE *f = fopen(DATA_FILE, "a");
-                if (f) { fwrite(recv_buf, 1, line_len, f); fclose(f); }
-                FILE *rf = fopen(DATA_FILE, "r");
-                if (rf) {
-                    char send_buf[BUFFER_SIZE];
-                    size_t r;
-                    while ((r = fread(send_buf, 1, sizeof(send_buf), rf)) > 0)
-                        send(client_fd, send_buf, r, 0);
-                    fclose(rf);
-                }
-                memmove(recv_buf, recv_buf + line_len, data_len - line_len);
-                data_len -= line_len;
-            }
-        }
-        free(recv_buf);
-        close(client_fd);
-        client_fd = -1;
-    }
-    if (server_fd != -1) close(server_fd);
-    unlink(DATA_FILE);
-    closelog();
+    cleanup();
     return 0;
 }
